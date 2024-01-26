@@ -1,5 +1,6 @@
 use crate::movement::*;
-use bevy::prelude::*;
+use bevy::{prelude::*, render::render_phase::CachedRenderPipelinePhaseItem};
+use bevy_ecs_ldtk::prelude::*;
 
 const PLAYER_SPEED: f32 = 2.0;
 const PLAYER_SPRITESHEET: &str = "player.png";
@@ -8,10 +9,20 @@ const NUM_OF_ANIMATIONS: usize = 2;
 const NUM_OF_DIRECTIONS: usize = 4;
 
 #[derive(Component)]
-struct Player {
+pub struct Player {
     speed: f32,
     face_dir: Direction,
     anim: PlayerAnimation,
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        return Player {
+            speed: PLAYER_SPEED,
+            face_dir: Direction::BOT,
+            anim: PlayerAnimation::IDLE,
+        };
+    }
 }
 
 #[derive(Component, Deref, DerefMut)]
@@ -31,47 +42,54 @@ enum PlayerAnimation {
     RUN = 2,
 }
 
+#[derive(Bundle)]
+pub struct PlayerBundle {
+    spritesheet: SpriteSheetBundle,
+    animation_timer: PlayerAnimationTimer,
+    velocity: Velocity,
+    player: Player,
+}
+
+impl LdtkEntity for PlayerBundle {
+    fn bundle_entity(
+        entity_instance: &EntityInstance,
+        layer_instance: &LayerInstance,
+        tileset: Option<&Handle<Image>>,
+        tileset_definition: Option<&TilesetDefinition>,
+        asset_server: &AssetServer,
+        texture_atlases: &mut Assets<TextureAtlas>,
+    ) -> Self {
+        let player_spritesheet_handle = asset_server.load(PLAYER_SPRITESHEET);
+        let player_spritesheet_atlas = TextureAtlas::from_grid(
+            player_spritesheet_handle,
+            Vec2::new(48.0, 48.0),
+            NUM_OF_ANIMATIONS * FRAMES_PER_ANIMATION,
+            NUM_OF_DIRECTIONS,
+            None,
+            None,
+        );
+        let player_spritesheet = texture_atlases.add(player_spritesheet_atlas);
+
+        return PlayerBundle {
+            spritesheet: SpriteSheetBundle {
+                sprite: TextureAtlasSprite::new(0),
+                texture_atlas: player_spritesheet,
+                ..Default::default()
+            },
+            animation_timer: PlayerAnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
+            velocity: Velocity::default(),
+            player: Player::default(),
+        };
+    }
+}
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_player)
-            .add_systems(Update, (move_player, player_face, player_animation));
+        app.add_systems(Update, (move_player, player_face, player_animation))
+            .register_ldtk_entity::<PlayerBundle>("Player");
     }
-}
-
-fn spawn_player(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut textures: ResMut<Assets<TextureAtlas>>,
-) {
-    let player_spritesheet_handle = asset_server.load(PLAYER_SPRITESHEET);
-    let player_spritesheet_atlas = TextureAtlas::from_grid(
-        player_spritesheet_handle,
-        Vec2::new(48.0, 48.0),
-        NUM_OF_ANIMATIONS * FRAMES_PER_ANIMATION,
-        NUM_OF_DIRECTIONS,
-        None,
-        None,
-    );
-    let player_spritesheet = textures.add(player_spritesheet_atlas);
-
-    commands
-        .spawn(SpriteSheetBundle {
-            sprite: TextureAtlasSprite::new(0),
-            texture_atlas: player_spritesheet,
-            ..Default::default()
-        })
-        .insert(PlayerAnimationTimer(Timer::from_seconds(
-            0.2,
-            TimerMode::Repeating,
-        )))
-        .insert(Velocity::default())
-        .insert(Player {
-            speed: PLAYER_SPEED,
-            face_dir: Direction::BOT,
-            anim: PlayerAnimation::IDLE,
-        });
 }
 
 fn player_animation(
@@ -79,7 +97,7 @@ fn player_animation(
     mut query: Query<(&mut PlayerAnimationTimer, &mut TextureAtlasSprite, &Player)>,
 ) {
     if let Ok((mut timer, mut sprite, player)) = query.get_single_mut() {
-        let frame_offset_x = (player.anim as usize);
+        let frame_offset_x = player.anim as usize;
         let frame_offset_y = (player.face_dir as usize) * NUM_OF_ANIMATIONS * FRAMES_PER_ANIMATION;
         let mut frame = sprite.index % FRAMES_PER_ANIMATION;
 
