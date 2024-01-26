@@ -1,25 +1,21 @@
 use crate::movement::*;
 use bevy::prelude::*;
 
-const PLAYER_SPEED: f32 = 1.0;
+const PLAYER_SPEED: f32 = 2.0;
 const PLAYER_SPRITESHEET: &str = "player.png";
-const FRAMES_PER_ANIMATION: usize = 4;
+const FRAMES_PER_ANIMATION: usize = 2;
+const NUM_OF_ANIMATIONS: usize = 2;
+const NUM_OF_DIRECTIONS: usize = 4;
 
 #[derive(Component)]
 struct Player {
     speed: f32,
     face_dir: Direction,
+    anim: PlayerAnimation,
 }
 
 #[derive(Component, Deref, DerefMut)]
 struct PlayerAnimationTimer(Timer);
-
-#[derive(Component)]
-struct PlayerAnimation {
-    first: i32,
-    last: i32,
-    timer: PlayerAnimationTimer,
-}
 
 #[derive(Clone, Copy)]
 enum Direction {
@@ -27,6 +23,12 @@ enum Direction {
     TOP,
     LEFT,
     RIGHT,
+}
+
+#[derive(Clone, Copy, Reflect)]
+enum PlayerAnimation {
+    IDLE = 0,
+    RUN = 2,
 }
 
 pub struct PlayerPlugin;
@@ -47,8 +49,8 @@ fn spawn_player(
     let player_spritesheet_atlas = TextureAtlas::from_grid(
         player_spritesheet_handle,
         Vec2::new(48.0, 48.0),
-        4,
-        4,
+        NUM_OF_ANIMATIONS * FRAMES_PER_ANIMATION,
+        NUM_OF_DIRECTIONS,
         None,
         None,
     );
@@ -61,13 +63,14 @@ fn spawn_player(
             ..Default::default()
         })
         .insert(PlayerAnimationTimer(Timer::from_seconds(
-            0.1,
+            0.2,
             TimerMode::Repeating,
         )))
         .insert(Velocity::default())
         .insert(Player {
             speed: PLAYER_SPEED,
             face_dir: Direction::BOT,
+            anim: PlayerAnimation::IDLE,
         });
 }
 
@@ -76,7 +79,8 @@ fn player_animation(
     mut query: Query<(&mut PlayerAnimationTimer, &mut TextureAtlasSprite, &Player)>,
 ) {
     if let Ok((mut timer, mut sprite, player)) = query.get_single_mut() {
-        let frame_offset = (player.face_dir as usize) * FRAMES_PER_ANIMATION;
+        let frame_offset_x = (player.anim as usize);
+        let frame_offset_y = (player.face_dir as usize) * NUM_OF_ANIMATIONS * FRAMES_PER_ANIMATION;
         let mut frame = sprite.index % FRAMES_PER_ANIMATION;
 
         timer.tick(time.delta());
@@ -84,12 +88,18 @@ fn player_animation(
             frame = (sprite.index + 1) % FRAMES_PER_ANIMATION;
         }
 
-        sprite.index = frame_offset + frame;
+        sprite.index = frame_offset_y + frame_offset_x + frame;
     }
 }
 
 fn player_face(mut query: Query<(&Velocity, &mut Player)>) {
     if let Ok((vel, mut player)) = query.get_single_mut() {
+        if vel.x == 0. && vel.y == 0. {
+            player.anim = PlayerAnimation::IDLE;
+        } else {
+            player.anim = PlayerAnimation::RUN;
+        }
+
         if vel.x > 0. {
             player.face_dir = Direction::RIGHT;
         } else if vel.x < 0. {
